@@ -27,7 +27,7 @@
 
     <div id="app" class="min-h-screen p-4 sm:p-8">
         <!-- Auth Status & User Info -->
-        <div id="auth-info" class="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-4 rounded-lg shadow-md border-b-4 border-indigo-500">
+        <div id="auth-info" class="mb-6 flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-4 rounded-lg shadow-md border-b-4 border-rose-500">
             <h1 class="text-3xl font-bold text-gray-800">Order Management & Chat</h1>
             <p id="user-display" class="text-sm text-gray-600 mt-2 sm:mt-0 truncate max-w-full sm:max-w-[200px]"></p>
         </div>
@@ -45,7 +45,7 @@
 
             <!-- 2. Chatbot (Client-Facing Tool) -->
             <div class="lg:col-span-1 flex flex-col bg-white p-6 rounded-xl shadow-2xl h-[80vh]">
-                <h2 class="text-2xl font-semibold mb-4 text-indigo-700">Sprinkles Chatbot Test</h2>
+                <h2 class="text-2xl font-semibold mb-4 text-rose-600">Sprinkles Chatbot Test</h2>
                 
                 <!-- Chat Messages Area -->
                 <div id="chat-messages" class="chat-container flex-grow mb-4 border border-gray-200">
@@ -58,9 +58,9 @@
                 <!-- Chat Input -->
                 <div class="flex">
                     <input type="text" id="user-input" placeholder="Ask about hours, delivery, or a custom order..."
-                           class="flex-grow p-3 border border-gray-300 rounded-l-lg focus:ring-indigo-500 focus:border-indigo-500 transition duration-150">
+                           class="flex-grow p-3 border border-gray-300 rounded-l-lg focus:ring-rose-500 focus:border-rose-500 transition duration-150">
                     <button id="send-button"
-                            class="bg-indigo-600 text-white font-semibold px-4 py-3 rounded-r-lg hover:bg-indigo-700 transition duration-300">
+                            class="bg-rose-500 text-white font-semibold px-4 py-3 rounded-r-lg hover:bg-rose-600 transition duration-300">
                         Send
                     </button>
                 </div>
@@ -158,6 +158,9 @@
          * Sets up the real-time listener for the admin's private order collection.
          */
         function setupOrderListener() {
+            // Check if auth is ready and we have a user ID before starting the listener
+            if (!isAuthReady || !currentUserId) return;
+
             // Path structure: /artifacts/{appId}/users/{userId}/orders
             const ordersCollectionPath = `artifacts/${appId}/users/${currentUserId}/orders`;
             const ordersRef = collection(db, ordersCollectionPath);
@@ -167,7 +170,7 @@
                 snapshot.forEach(doc => {
                     orders.push({ id: doc.id, ...doc.data() });
                 });
-                console.log("Fetched orders:", orders);
+                console.log("Fetched orders:", orders.length);
                 renderOrders(orders);
             }, (error) => {
                 console.error("Error listening to orders (Check Security Rules):", error);
@@ -183,7 +186,7 @@
         function renderOrders(orders) {
             if (!ordersContainer) return;
 
-            loadingMessage.classList.add('hidden'); 
+            if (loadingMessage) loadingMessage.classList.add('hidden'); 
 
             if (orders.length === 0) {
                 ordersContainer.innerHTML = '<p class="text-gray-500 text-center py-8">No orders found.</p>';
@@ -191,7 +194,8 @@
             }
 
             ordersContainer.innerHTML = ''; // Clear existing content
-            orders.sort((a, b) => b.createdAt?.toMillis() - a.createdAt?.toMillis());
+            // Sort by creation date descending (newest first)
+            orders.sort((a, b) => (b.createdAt?.toMillis() || 0) - (a.createdAt?.toMillis() || 0));
 
             orders.forEach(order => {
                 const statusColor = getStatusColor(order.status);
@@ -227,7 +231,8 @@
                     </div>
                     ${orderDetailsHTML}
                     <div class="mt-3 flex space-x-2 border-t pt-3">
-                        <select id="status-select-${order.id}" class="p-1 text-sm border border-gray-300 rounded-lg bg-white">
+                        <!-- Added focus styling to match theme -->
+                        <select id="status-select-${order.id}" class="p-1 text-sm border border-gray-300 rounded-lg bg-white focus:border-rose-500 focus:ring-rose-500 transition duration-150">
                             <option value="Pending" ${order.status === 'Pending' ? 'selected' : ''}>Pending</option>
                             <option value="Processing" ${order.status === 'Processing' ? 'selected' : ''}>Processing</option>
                             <option value="Confirmed" ${order.status === 'Confirmed' ? 'selected' : ''}>Confirmed</option>
@@ -353,15 +358,17 @@
 * Q: How far in advance do I need to place a large order (2+ dozen)? A: We require 48 hours notice for large orders.
 * Q: Do you accept corporate orders or catering? A: Yes! For large events or catering, please ask me to start a custom order request so we can provide a personalized quote.`;
 
+        // --- UPDATED SYSTEM PROMPT FOR STRONGER PERSONA ENFORCEMENT ---
         const systemPrompt = `
-You are 'Sprinkles', the virtual baker and assistant for The Sugar Sprinkle Spot, a made-to-order, home-based bakery.
-Your primary directive is to answer customer questions using ONLY the provided knowledge base (KB).
-If a question cannot be answered with the KB, politely state that you do not have that information and provide the shop's phone number ((407) 799-0341) for human assistance.
+You are 'Sprinkles', the virtual baker and assistant for The Sugar Sprinkle Spot, a made-to-order, home-based bakery. Your goal is to be the friendliest, most cheerful assistant possible, using a tone heavily infused with baking and dessert metaphors.
 
-Persona Rules:
-1. Tone: Cheerful, friendly, and professional. Use light baking metaphors (e.g., "Let's whip up an answer," "That's the icing on the cake!").
-2. Focus: Emphasize that the bakery is made-to-order (customers choose the flavor) and home-based (no public storefront).
-3. Lead Qualification: If the user explicitly asks to "start a custom order," "place a large order," or "ask about a cake," immediately trigger the "CUSTOM_ORDER_FLOW" by starting the conversation with Step 1 of the Lead Qualification Script. Do not answer other questions until the flow is complete or canceled.
+Tone and Persona Rules (MANDATORY):
+1.  **Use Baking Metaphors:** Every answer must incorporate a baking/dessert metaphor or reference. Examples: "Let's whip up an answer," "That's the icing on the cake," "Sweet question!", "Baking up a reply now," "Got that recipe down!"
+2.  **Key Focus:** Always emphasize that we are **made-to-order** (customers choose the flavor) and a **home-based business** (no public storefront).
+3.  **Core Directive:** Answer questions ONLY using the provided KNOWLEDGE BASE (KB). If the information is missing, apologize with a cheerful, metaphorical tone and provide the shop's phone number ((407) 799-0341) for a human baker's assistance.
+4.  **Length:** Ensure responses are friendly and conversational, not just bullet points or curt phrases.
+
+Lead Qualification: If the user explicitly asks to "start a custom order," "place a large order," or "ask about a cake," immediately trigger the "CUSTOM_ORDER_FLOW" by starting the conversation with Step 1 of the Lead Qualification Script. Do not answer other questions until the flow is complete or canceled.
 
 Lead Qualification Script (CUSTOM_ORDER_FLOW):
 Step 1: "I'd be happy to start that for you! To give our baker the best details, I need three main ingredients: 1) What is the **Date** and **Time** you need the order? 2) What is the **Type of item** (e.g., 2 dozen cupcakes, a custom birthday cake, catering)? 3) What is the best **Name and Phone Number** for our baker to call you back?"
@@ -376,6 +383,7 @@ Step 3 (After Step 2 is answered): "Perfect! I have captured all the delicious d
          * Handles the logic for the custom order qualification flow.
          */
         function handleCustomOrderFlow(userMessage) {
+            console.log("Entering handleCustomOrderFlow. Step:", orderStep);
             // If the user tries to exit the flow
             if (userMessage.toLowerCase().includes('cancel') || userMessage.toLowerCase().includes('stop')) {
                 isInOrderFlow = false;
@@ -389,33 +397,39 @@ Step 3 (After Step 2 is answered): "Perfect! I have captured all the delicious d
                 customOrderDetails.step1 = userMessage;
                 orderStep = 2;
                 
+                // --- RECAP FIX APPLIED HERE ---
                 // Try to extract some details for the recap
-                const typeMatch = userMessage.match(/(\d+\s+dozen|\bcake\b|\bcatering\b)/i) || ['order'];
-
-                return `Thank you! I see you need a ${typeMatch[0]}. I just need two more details: 4) What is the desired **Flavor/Theme/Allergies**? 5) Where is the **Delivery Address** so we can calculate the fee? (Remember, a 50% deposit is required to book!)`;
+                const phoneNumMatch = userMessage.match(/\d{3}[-.\s]?\d{3}[-.\s]?\d{4}/) || ['the contact details'];
+                const itemMatch = userMessage.match(/(\d+\s+dozen|\bcake\b|\bcatering\b)/i) || ['order details'];
+                
+                return `Fantastic! I've baked up your initial details for a ${itemMatch[0]} and noted the contact number (${phoneNumMatch[0]}). Now let's finish the recipe! I just need two more details: 4) What is the desired **Flavor/Theme/Allergies**? 5) Where is the **Delivery Address** so we can calculate the fee? (Remember, a 50% deposit is required to book!)`;
+                // --- END RECAP FIX ---
                 
             } else if (orderStep === 2) {
                 // Collect Flavor/Theme/Allergies and Delivery Address (Step 2)
                 customOrderDetails.step2 = userMessage;
-                orderStep = 3;
                 
-                // Move to recap and save the lead
-                const nameMatch = customOrderDetails.step1.match(/name\s*:\s*([a-z\s]+)/i) || customOrderDetails.step1.match(/(?:my name is|i'm)\s*([a-z\s]+)/i) || ['Customer'];
-                const phoneNum = customOrderDetails.step1.match(/\d{3}[-.\s]?\d{3}[-.\s]?\d{4}/) || ['(407) 799-0341 (No number provided)'];
+                // Extracting details for saving and final message
+                const nameMatch = customOrderDetails.step1.match(/(name|i'm|my name is)\s*[:]?\s*([a-zA-Z\s]+)/i) || ['Customer'];
+                const phoneNum = customOrderDetails.step1.match(/\d{3}[-.\s]?\d{3}[-.\s]?\d{4}/) || ['(No number provided)'];
                 
+                // The full user response is saved in 'Details'.
                 const leadDetails = {
-                    OrderType: customOrderDetails.step1.substring(0, 50),
-                    Date: customOrderDetails.step1.substring(0, 50),
-                    Details: customOrderDetails.step2,
-                    ContactInfo: `${nameMatch[0]} / ${phoneNum[0]}`,
-                    DeliveryAddress: customOrderDetails.step2.substring(0, 50) 
+                    OrderType: customOrderDetails.step1.substring(0, 100),
+                    Details: customOrderDetails.step2, // This has the full text (Flavor + Address)
+                    ContactInfo: `${nameMatch.length > 2 ? nameMatch[2].trim() : nameMatch[0]} / ${phoneNum[0]}`,
+                    DeliveryAddress: "In 'Details' / Contact customer.", // Set to placeholder to fix the bug
+                    Date: customOrderDetails.step1.substring(0, 100)
                 };
 
                 saveChatLead(leadDetails); // Save the lead to Firestore
 
                 isInOrderFlow = false;
                 orderStep = 0;
-                return `Perfect! I have captured all the delicious details. Our baker will review these details and contact you at ${phoneNum[0]} within 24 hours to confirm the final quote and collect the deposit. Is there anything else I can help you with today?`;
+                customOrderDetails = {};
+
+                // Stronger, more definitive confirmation message
+                return `Hooray! That's the final ingredient added to the mixing bowl! Your custom order lead has been **successfully recorded in our system**. Our master baker will personally review these delicious details and contact you at ${phoneNum[0]} within 24 hours to finalize your quote and confirm the 50% deposit. Consider this part done! Is there anything else I can whip up for you today?`;
             }
 
             // Initialize flow if not started
@@ -496,7 +510,8 @@ Step 3 (After Step 2 is answered): "Perfect! I have captured all the delicious d
                         }
                     }
                 } catch (error) {
-                    console.error(`Attempt ${retries + 1} failed:`, error);
+                    // Do not log retries as errors in the console
+                    // console.error(`Attempt ${retries + 1} failed:`, error);
                 }
 
                 retries++;
@@ -509,7 +524,7 @@ Step 3 (After Step 2 is answered): "Perfect! I have captured all the delicious d
             return "Oops! I seem to have mixed up the ingredients. Please try your question again, or call our baker directly at (407) 799-0341!";
         }
 
-        // --- 5. UI INTEGRATION ---
+        // --- 5. UI INTEGRATION & EVENT LISTENERS ---
         
         function appendMessage(sender, text) {
             const chatbox = document.getElementById('chat-messages');
@@ -517,8 +532,14 @@ Step 3 (After Step 2 is answered): "Perfect! I have captured all the delicious d
 
             const messageElement = document.createElement('div');
             messageElement.className = sender === 'user' ? 'user-message' : 'bot-message';
+            
+            // Applying pink styling to user message bubble
+            const bubbleClass = sender === 'user' 
+                ? 'bg-rose-100 text-rose-800 ml-auto' 
+                : 'bg-white text-gray-700 border border-gray-100';
+
             messageElement.innerHTML = `
-                <div class="p-3 rounded-xl shadow-md max-w-full sm:max-w-xs ${sender === 'user' ? 'bg-indigo-100 text-indigo-800 ml-auto' : 'bg-white text-gray-700 border border-gray-100'}">
+                <div class="p-3 rounded-xl shadow-md max-w-full sm:max-w-xs ${bubbleClass}">
                     ${text.replace(/\n/g, '<br>')}
                 </div>
                 <small class="text-xs text-gray-400 mt-1 block ${sender === 'user' ? 'text-right' : 'text-left'}">${sender === 'user' ? 'You' : 'Sprinkles'}</small>
@@ -528,58 +549,69 @@ Step 3 (After Step 2 is answered): "Perfect! I have captured all the delicious d
         }
 
         async function sendMessage() {
+            console.log("sendMessage triggered.");
             const inputElement = document.getElementById('user-input');
-            
-            // Check if the input element exists before trying to read its value
+            const sendButton = document.getElementById('send-button');
+            const typingIndicator = document.getElementById('typing-indicator');
+
             if (!inputElement) {
                 console.error("Input element not found.");
                 return;
             }
-
+            
             const message = inputElement.value.trim();
-            const sendButton = document.getElementById('send-button');
-            const typingIndicator = document.getElementById('typing-indicator');
-
             if (message === '') return;
 
             inputElement.value = '';
             appendMessage('user', message);
             
-            // Disable button only if it exists
             if (sendButton) sendButton.disabled = true;
 
-            // Show typing indicator only if it exists
             if (typingIndicator) {
                 typingIndicator.classList.remove('hidden');
-                typingIndicator.scrollIntoView({ behavior: 'smooth', block: 'end' });
+                typingIndicator.scrollIntoView({ behavior: 'smooth' });
             }
 
-
-            // Get the response
+            // Get the response from the Gemini API
             const botResponse = await getGeminiResponse(message);
-
-            // Hide typing indicator and display response
-            if (typingIndicator) typingIndicator.classList.add('hidden');
-            appendMessage('bot', botResponse);
             
-            // Re-enable button only if it exists
+            // Re-enable UI elements
+            if (typingIndicator) typingIndicator.classList.add('hidden');
             if (sendButton) sendButton.disabled = false;
+            
+            // Append the bot's reply
+            appendMessage('bot', botResponse);
         }
 
-        // Attach event listeners when the window loads
-        window.onload = () => {
-            document.getElementById('send-button')?.addEventListener('click', sendMessage);
-            document.getElementById('user-input')?.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
-                    // Prevent default to avoid form submission if this was a form
-                    e.preventDefault(); 
-                    sendMessage();
-                }
-            });
+        // --- FINAL STEP: ATTACH LISTENERS AFTER DOM IS READY ---
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log("DOM fully loaded. Attaching event listeners...");
+            const sendButton = document.getElementById('send-button');
+            const userInput = document.getElementById('user-input');
 
-            // Initial greeting for the Chatbot
-            appendMessage('bot', `Hello! I'm Sprinkles, your virtual baker and assistant for The Sugar Sprinkle Spot. How can I help you whip up the perfect order today? (Try asking about delivery, pricing, or "start a custom order"!)`);
-        };
+            if (sendButton) {
+                sendButton.addEventListener('click', sendMessage);
+                console.log("Attached click listener to send button.");
+            } else {
+                console.error("Send button not found at DOM ready.");
+            }
+
+            if (userInput) {
+                userInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault(); // Prevent default form submission behavior (if any)
+                        sendMessage();
+                    }
+                });
+                console.log("Attached keypress listener to input field.");
+            } else {
+                console.error("User input field not found at DOM ready.");
+            }
+            
+            // Initial message when the chat loads
+            appendMessage('bot', "Hi there! I'm Sprinkles, your virtual baker. I can help you with questions about our shop or start a custom order for you!");
+        });
+        
     </script>
 </body>
 </html>
