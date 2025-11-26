@@ -124,6 +124,7 @@
         let orderStep = 0;
         let customOrderDetails = {};
         let authPromise = null; // Promise to track authentication status
+        let isAuthError = false; // New flag to stop flow if auth fails
 
         /**
          * Handles the logic for the custom order qualification flow.
@@ -133,6 +134,10 @@
         function handleCustomOrderFlow(userMessage) {
             console.log(`[FLOW DEBUG] Entered Flow. Current Step: ${orderStep}, Message: "${userMessage.substring(0, 30)}..."`);
             
+            if (isAuthError) {
+                return "I'm sorry, I cannot start a custom order right now. There is a technical issue saving leads. Please call our baker directly at (407) 799-0341.";
+            }
+
             // If the user tries to exit the flow
             if (userMessage.toLowerCase().includes('cancel') || userMessage.toLowerCase().includes('stop')) {
                 isInOrderFlow = false;
@@ -203,13 +208,13 @@
         // --- MANUAL CONFIGURATION REQUIRED FOR EXTERNAL DEPLOYMENT ---
         // These values are sourced from the Firebase project settings for the Web App.
         const MANUAL_FIREBASE_CONFIG = {
-            // 🟢 UPDATED with user-provided API Key
+            // NOTE: These values caused the auth/configuration-not-found error.
+            // Ensure Anonymous Sign-in is ENABLED in Firebase Console > Authentication > Sign-in method.
             apiKey: "AIzaSyA4DRHNH-ebn_z6zolcLLkZctTKD9HbPyY", 
             authDomain: "kskupcakeleads.firebaseapp.com",
             projectId: "kskupcakeleads",
             storageBucket: "kskupcakeleads.firebasestorage.app",
             messagingSenderId: "979562316466",
-            // 🟢 UPDATED with user-provided App ID
             appId: "1:979562316466:web:7b07802098ec504623ffab" 
         };
         // --- END: MANUAL CONFIGURATION ---
@@ -221,10 +226,9 @@
             firebaseConfig = JSON.parse(__firebase_config);
         }
 
-        // Configuration check before initialization (should pass now)
+        // Configuration check before initialization 
         if (firebaseConfig.apiKey === "YOUR_API_KEY" || firebaseConfig.appId === "YOUR_APP_APPID") {
             console.error("Firebase Config Missing: Please add your Firebase API Key and App ID to the MANUAL_FIREBASE_CONFIG in client_chatbot.html.");
-            // Do not proceed with app initialization if config is clearly placeholder
             document.addEventListener('DOMContentLoaded', () => {
                 const sendButton = document.getElementById('send-button');
                 if (sendButton) sendButton.disabled = true;
@@ -236,7 +240,7 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
         const auth = getAuth(app);
-        let currentUserId = 'client-bot-user'; // Use a generic ID for the public bot
+        let currentUserId = 'client-bot-user'; 
 
         // Authenticate anonymously (required for Firestore rules) and store the promise
         authPromise = signInAnonymously(auth).then(userCredential => {
@@ -244,13 +248,20 @@
             console.log("Chatbot authenticated anonymously with ID:", currentUserId);
         }).catch(error => {
             console.error("Anonymous authentication failed:", error);
-            // Even if auth fails, we resolve the promise so the app doesn't hang, 
-            // but the save function will likely fail gracefully.
+            // Set flag to stop the flow from trying to save data later
+            isAuthError = true; 
+            // Inform the user in the chat about the critical error immediately after the greeting
+            appendMessage('bot', "🚨 Critical Error: I cannot access the order system. Please ensure Anonymous Sign-in is enabled in your Firebase Console and refresh the app.");
         });
 
 
         // Function to save the collected order to Firestore
         async function saveCustomOrderLead(step1Details, step2Details) {
+            if (isAuthError) {
+                 console.warn("Save skipped: Authentication failed previously.");
+                 return; // Prevent saving if authentication failed
+            }
+
             try {
                 // Public data path: /artifacts/{appId}/public/data/orders
                 const ordersCollection = collection(db, 'artifacts', appId, 'public', 'data', 'orders');
@@ -269,7 +280,7 @@
                 
                 let userFriendlyError = "There was an error logging your request to our system. ";
                 if (e.code === 'permission-denied') {
-                    userFriendlyError += "The baker's system is rejecting the data. This often means the **security rules need to be published** in the Firebase console.";
+                    userFriendlyError += "The baker's system is rejecting the data. This means the Anonymous Sign-in might be off, or the **Firestore security rules need to be published**.";
                 } else if (e.code) {
                     userFriendlyError += `A technical error (${e.code}) occurred.`;
                 } else {
