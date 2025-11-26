@@ -18,6 +18,8 @@
         body {
             font-family: 'Inter', sans-serif;
             background-color: #f7f3f0; /* Soft, creamy background */
+            /* Addressing Compatibility Warning */
+            text-size-adjust: 100%;
         }
         .chat-container {
             height: 85vh; /* Responsive height */
@@ -94,21 +96,30 @@
             </div>
         </div>
 
-        <!-- Input Area -->
+        <!-- Input Area - Structured with <form> for robustness -->
         <footer class="p-4 border-t border-gray-200 bg-white">
-            <div class="flex space-x-3">
-                <!-- Consolidated the input tag to fix the rendering issue shown in the screenshot -->
-                <input type="text" id="user-input" name="message" aria-label="Chat message input" placeholder="Ask about pricing, delivery, or type 'start a custom order'..." class="flex-grow p-3 border border-gray-300 rounded-full focus:ring-2 focus:ring-pink-400 focus:border-pink-400 transition duration-150" autocomplete="off">
+            <form id="chat-form" class="flex space-x-3">
+                <input 
+                    type="text" 
+                    id="user-input" 
+                    name="message" 
+                    aria-label="Chat message input field" 
+                    placeholder="Type your message here..."
+                    class="flex-grow p-3 border border-gray-300 rounded-full focus:ring-2 focus:ring-pink-400 focus:border-pink-400 transition duration-150" 
+                    autocomplete="off"
+                />
                 
                 <button 
                     id="send-button" 
+                    type="button" 
+                    aria-label="Send message" 
                     class="bg-pink-500 text-white p-3 rounded-full hover:bg-pink-600 transition duration-150 shadow-md flex items-center justify-center disabled:bg-pink-300"
                 >
                     <svg xmlns="http://www.w3.org/2d00/svg" class="h-6 w-6 transform rotate-90" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                     </svg>
                 </button>
-            </div>
+            </form>
             <!-- Status message element -->
             <div id="status-message" class="text-xs mt-2 text-center text-gray-500 transition-colors duration-300">Loading Sprinkles...</div>
         </footer>
@@ -405,11 +416,15 @@
         // --- Event Listeners (DOM Ready) ---
         document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('send-button').addEventListener('click', sendMessage);
-            document.getElementById('user-input').addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
+            
+            // Add form submission listener for 'Enter' key behavior
+            const chatForm = document.getElementById('chat-form');
+            if (chatForm) {
+                chatForm.addEventListener('submit', (e) => {
+                    e.preventDefault(); // Stop form from causing a page refresh
                     sendMessage();
-                }
-            });
+                });
+            }
         });
     </script>
 </body>
