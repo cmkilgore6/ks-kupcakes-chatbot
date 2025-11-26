@@ -131,11 +131,14 @@
          * @returns {string} The chatbot's response.
          */
         function handleCustomOrderFlow(userMessage) {
+            console.log(`[FLOW DEBUG] Entered Flow. Current Step: ${orderStep}, Message: "${userMessage.substring(0, 30)}..."`);
+            
             // If the user tries to exit the flow
             if (userMessage.toLowerCase().includes('cancel') || userMessage.toLowerCase().includes('stop')) {
                 isInOrderFlow = false;
                 orderStep = 0;
                 customOrderDetails = {};
+                console.log("[FLOW DEBUG] Flow Canceled.");
                 return "Order flow canceled. Feel free to ask any other questions about K's Kupcakes!";
             }
 
@@ -143,7 +146,7 @@
             if (orderStep === 1) {
                 customOrderDetails.step1 = userMessage;
                 orderStep = 2;
-                // Use a simplified recap since we can't fully parse the response here
+                console.log("[FLOW DEBUG] Step 1 complete. Advancing to Step 2.");
                 return "Thank you! I just need two more details: 4) What is the desired **Flavor/Theme/Allergies**? 5) Where is the **Delivery Address** so we can calculate the fee? (Remember, a 50% deposit is required to book!)";
             } 
             
@@ -152,28 +155,41 @@
                 customOrderDetails.step2 = userMessage;
                 orderStep = 3;
                 
-                // Move to recap
-                const recap = `Step 1: ${customOrderDetails.step1.substring(0, 30)}... | Step 2: ${customOrderDetails.step2.substring(0, 30)}...`;
-                const phoneNumMatch = customOrderDetails.step1.match(/\d{3}[-.\s]?\d{3}[-.\s]?\d{4}/);
-                const phoneNum = phoneNumMatch ? phoneNumMatch[0] : '(407) 799-0341 (Please include a phone number for follow-up!)'; 
-                
                 // Reset flow variables
                 isInOrderFlow = false;
                 orderStep = 0;
                 
+                // --- Start of improved recap and phone number extraction ---
+                const finalRecap = `Your custom order details (Date/Type: ${customOrderDetails.step1.substring(0, 20)}..., Flavor/Delivery: ${customOrderDetails.step2.substring(0, 20)}...) have been logged.`;
+
+                // Attempt to find a standard phone number format in Step 1's input
+                const phoneNumMatch = customOrderDetails.step1.match(/(\d{3}[-.\s]?){2}\d{4}/);
+                const phoneNum = phoneNumMatch ? phoneNumMatch[0] : 'the number you provided';
+                
+                console.log("[FLOW DEBUG] Step 2 complete. Attempting to save lead...");
+
                 // IMPORTANT: Send the data to the Admin Dashboard's database.
                 // We use 'await authPromise' to ensure we are authenticated before saving the lead.
                 authPromise.then(() => {
                     saveCustomOrderLead(customOrderDetails.step1, customOrderDetails.step2);
                 });
 
-                return `Perfect! I have captured all the delicious details: ${recap}. Our baker will review these details and contact you at ${phoneNum} within 24 hours to confirm the final quote and collect the deposit. Is there anything else I can help you with today?`;
+                return `Perfect! I have captured all the delicious details. ${finalRecap} Our baker will review these details and contact you at ${phoneNum} within 24 hours to confirm the final quote and collect the deposit. Is there anything else I can help you with today?`;
             }
 
-            // Initialize flow if triggered
+            // Initialize flow if triggered (only runs if orderStep is 0)
+            if (orderStep === 0) {
+                orderStep = 1;
+                isInOrderFlow = true;
+                console.log("[FLOW DEBUG] Flow initialized to Step 1.");
+                return "I'd be happy to start that for you! To give our baker the best details, I need three main ingredients: 1) What is the **Date** and **Time** you need the order? 2) What is the **Type of item** (e.g., 2 dozen cupcakes, a custom birthday cake, catering)? 3) What is the best **Name and Phone Number** for our baker to call you back?";
+            }
+            
+            // Fallback for unexpected state (shouldn't happen, but good for debugging)
+            console.error(`[FLOW DEBUG] Unexpected state reached: orderStep=${orderStep}, isInOrderFlow=${isInOrderFlow}. Restarting flow.`);
             orderStep = 1;
             isInOrderFlow = true;
-            return "I'd be happy to start that for you! To give our baker the best details, I need three main ingredients: 1) What is the **Date** and **Time** you need the order? 2) What is the **Type of item** (e.g., 2 dozen cupcakes, a custom birthday cake, catering)? 3) What is the best **Name and Phone Number** for our baker to call you back?";
+            return "Oops, I got confused. Let's restart. To give our baker the best details, I need three main ingredients: 1) What is the **Date** and **Time** you need the order? 2) What is the **Type of item** (e.g., 2 dozen cupcakes, a custom birthday cake, catering)? 3) What is the best **Name and Phone Number** for our baker to call you back?";
         }
 
         // --- FIREBASE SETUP FOR SAVING LEADS ---
@@ -248,8 +264,19 @@
                 });
                 console.log("Custom order lead successfully logged to Firestore.");
             } catch (e) {
-                console.error("Error adding document: ", e);
-                appendMessage('bot', "There was an error logging your request to our system. Please try again or call our baker directly at (407) 799-0341.");
+                // *** IMPROVED ERROR LOGGING HERE ***
+                console.error("FIREBASE LEAD SAVE FAILED:", e.code || e.name, e.message);
+                
+                let userFriendlyError = "There was an error logging your request to our system. ";
+                if (e.code === 'permission-denied') {
+                    userFriendlyError += "The baker's system is rejecting the data. This often means the **security rules need to be published** in the Firebase console.";
+                } else if (e.code) {
+                    userFriendlyError += `A technical error (${e.code}) occurred.`;
+                } else {
+                    userFriendlyError += "Please try again or call our baker directly at (407) 799-0341.";
+                }
+
+                appendMessage('bot', userFriendlyError);
             }
         }
 
