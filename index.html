@@ -8,7 +8,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Use Inter font -->
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
         body {
             font-family: 'Inter', sans-serif;
             background-color: #f7f3f0; /* Soft, creamy background */
@@ -61,7 +61,7 @@
         
         <!-- Header -->
         <header class="p-4 bg-pink-500 text-white shadow-lg flex items-center justify-between">
-            <h1 class="text-2xl font-bold tracking-tight">🧁 K's Kupcakes 🧁</h1>
+            <h1 class="text-2xl font-extrabold tracking-tight">🧁 K's Kupcakes 🧁</h1>
             <span class="text-sm font-light">Chat with Sprinkles (AI Assistant)</span>
         </header>
 
@@ -106,7 +106,8 @@
     <script type="text/javascript">
         // --- Configuration ---
         const APP_NAME = "K's Kupcakes";
-        const API_KEY = ""; // Leave as empty string. Canvas provides this at runtime.
+        // CRITICAL FIX: The API_KEY variable definition must be removed to prevent security errors on live hosted sites.
+        // const API_KEY = ""; // Removed
 
         const knowledgeBase = `
         // K's Kupcakes Knowledge Base (This is the grounding data for the AI)
@@ -150,7 +151,7 @@
 
         Lead Qualification Script (CUSTOM_ORDER_FLOW):
         Step 1: "I'd be happy to start that for you! To give our baker the best details, I need three main ingredients: 1) What is the **Date** and **Time** you need the order? 2) What is the **Type of item** (e.g., 2 dozen cupcakes, a custom birthday cake, catering)? 3) What is the best **Name and Phone Number** for our baker to call you back?"
-        Step 2 (After Step 1 is answered): "Thank you! I see you need [RECAP DETAILS]. I just need two more details: 4) What is the desired **Flavor/Theme/Allergies**? 5) Where is the **Delivery Address** so we can calculate the fee? (Remember, a 50% deposit is required to book!)"
+        Step 2 (After Step 1 is answered): "Thank Muffin! I see you need [RECAP DETAILS]. I just need two more details: 4) What is the desired **Flavor/Theme/Allergies**? 5) Where is the **Delivery Address** so we can calculate the fee? (Remember, a 50% deposit is required to book!)"
         Step 3 (After Step 2 is answered): "Perfect! I have captured all the delicious details: [FULL RECAP OF ORDER]. Our baker will review these details and contact you at [PHONE NUMBER] within 24 hours to confirm the final quote and collect the deposit. Is there anything else I can help you with today?"
         `;
 
@@ -207,7 +208,8 @@
                 systemInstruction: { parts: [{ text: systemPrompt }] },
             };
 
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${API_KEY}`;
+            // NOTE: Since the API_KEY variable is removed, the environment must automatically provide the key.
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent`;
 
             let response;
             let retries = 0;
@@ -227,9 +229,13 @@
                         if (text) {
                             return text;
                         }
+                    } else {
+                        // Log non-200 responses to console for better debugging on GitHub Pages
+                        const errorBody = await response.text();
+                        console.error(`API Error Status: ${response.status}. Body: ${errorBody}`);
                     }
                 } catch (error) {
-                    console.error(`Attempt ${retries + 1} failed:`, error);
+                    console.error(`Attempt ${retries + 1} failed with network error:`, error);
                 }
 
                 retries++;
@@ -289,4 +295,4 @@
     </script>
 </body>
 </html>
-Initial Chatbot deployment
+Fix API Key and compatibility issues
