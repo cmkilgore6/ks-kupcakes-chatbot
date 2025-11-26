@@ -113,7 +113,7 @@
 
         Lead Qualification Script (CUSTOM_ORDER_FLOW):
         Step 1: "I'd be happy to start that for you! To give our baker the best details, I need three main ingredients: 1) What is the **Date** and **Time** you need the order? 2) What is the **Type of item** (e.g., 2 dozen cupcakes, a custom birthday cake, catering)? 3) What is the best **Name and Phone Number** for our baker to call you back?"
-        Step 2 (After Step 1 is answered): "Thank you! I see you need [RECAP DETAILS]. I just need two more details: 4) What is the desired **Flavor/Theme/Allergies**? 5) Where is the **Delivery Address** so we can calculate the fee? (Remember, a 50% deposit is required to book!)"
+        Step 2 (After Step 1 is answered): "Thank you! I just need two more details: 4) What is the desired **Flavor/Theme/Allergies**? 5) Where is the **Delivery Address** so we can calculate the fee? (Remember, a 50% deposit is required to book!)"
         Step 3 (After Step 2 is answered): "Perfect! I have captured all the delicious details: [FULL RECAP OF ORDER]. Our baker will review these details and contact you at [PHONE NUMBER] within 24 hours to confirm the final quote and collect the deposit. Is there anything else I can help you with today?"
         `;
 
@@ -123,6 +123,7 @@
         let isInOrderFlow = false;
         let orderStep = 0;
         let customOrderDetails = {};
+        let authPromise = null; // Promise to track authentication status
 
         /**
          * Handles the logic for the custom order qualification flow.
@@ -142,7 +143,8 @@
             if (orderStep === 1) {
                 customOrderDetails.step1 = userMessage;
                 orderStep = 2;
-                return "Thank you! I see you need [DATE, TYPE, NAME, PHONE NUMBER]. I just need two more details: 4) What is the desired **Flavor/Theme/Allergies**? 5) Where is the **Delivery Address** so we can calculate the fee? (Remember, a 50% deposit is required to book!)";
+                // Use a simplified recap since we can't fully parse the response here
+                return "Thank you! I just need two more details: 4) What is the desired **Flavor/Theme/Allergies**? 5) Where is the **Delivery Address** so we can calculate the fee? (Remember, a 50% deposit is required to book!)";
             } 
             
             // Step 2: Collect Flavor/Theme/Allergies and Delivery Address
@@ -151,17 +153,19 @@
                 orderStep = 3;
                 
                 // Move to recap
-                const recap = `Date/Time: ${customOrderDetails.step1.substring(0, 30)}... | Flavor/Address: ${customOrderDetails.step2.substring(0, 30)}...`;
+                const recap = `Step 1: ${customOrderDetails.step1.substring(0, 30)}... | Step 2: ${customOrderDetails.step2.substring(0, 30)}...`;
                 const phoneNumMatch = customOrderDetails.step1.match(/\d{3}[-.\s]?\d{3}[-.\s]?\d{4}/);
-                const phoneNum = phoneNumMatch ? phoneNumMatch[0] : '(407) 799-0341'; // Fallback if number not given
+                const phoneNum = phoneNumMatch ? phoneNumMatch[0] : '(407) 799-0341 (Please include a phone number for follow-up!)'; 
                 
                 // Reset flow variables
                 isInOrderFlow = false;
                 orderStep = 0;
                 
-                // IMPORTANT: This is where we should *send* the data to the Admin Dashboard's database.
-                // We'll call a dedicated function here to save the lead.
-                saveCustomOrderLead(customOrderDetails.step1, customOrderDetails.step2);
+                // IMPORTANT: Send the data to the Admin Dashboard's database.
+                // We use 'await authPromise' to ensure we are authenticated before saving the lead.
+                authPromise.then(() => {
+                    saveCustomOrderLead(customOrderDetails.step1, customOrderDetails.step2);
+                });
 
                 return `Perfect! I have captured all the delicious details: ${recap}. Our baker will review these details and contact you at ${phoneNum} within 24 hours to confirm the final quote and collect the deposit. Is there anything else I can help you with today?`;
             }
@@ -181,13 +185,16 @@
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
         // --- MANUAL CONFIGURATION REQUIRED FOR EXTERNAL DEPLOYMENT ---
+        // These values are sourced from the Firebase project settings for the Web App.
         const MANUAL_FIREBASE_CONFIG = {
-            apiKey: "YOUR_API_KEY", // <-- REPLACE THIS
-            authDomain: "YOUR_PROJECT_ID.firebaseapp.com", // <-- REPLACE THIS
-            projectId: "YOUR_PROJECT_ID", // <-- REPLACE THIS
-            storageBucket: "YOUR_PROJECT_ID.appspot.com", // <-- REPLACE THIS
-            messagingSenderId: "YOUR_MESSAGING_SENDER_ID", // <-- REPLACE THIS
-            appId: "YOUR_APP_APPID" // <-- REPLACE THIS
+            // 🟢 UPDATED with user-provided API Key
+            apiKey: "AIzaSyA4DRHNH-ebn_z6zolcLLkZctTKD9HbPyY", 
+            authDomain: "kskupcakeleads.firebaseapp.com",
+            projectId: "kskupcakeleads",
+            storageBucket: "kskupcakeleads.firebasestorage.app",
+            messagingSenderId: "979562316466",
+            // 🟢 UPDATED with user-provided App ID
+            appId: "1:979562316466:web:7b07802098ec504623ffab" 
         };
         // --- END: MANUAL CONFIGURATION ---
 
@@ -198,9 +205,16 @@
             firebaseConfig = JSON.parse(__firebase_config);
         }
 
-        // Configuration check before initialization
-        if (!firebaseConfig.projectId || firebaseConfig.projectId === "YOUR_PROJECT_ID") {
-            console.error("Firebase Config Missing: Please add your Firebase configuration to the MANUAL_FIREBASE_CONFIG in client_chatbot.html.");
+        // Configuration check before initialization (should pass now)
+        if (firebaseConfig.apiKey === "YOUR_API_KEY" || firebaseConfig.appId === "YOUR_APP_APPID") {
+            console.error("Firebase Config Missing: Please add your Firebase API Key and App ID to the MANUAL_FIREBASE_CONFIG in client_chatbot.html.");
+            // Do not proceed with app initialization if config is clearly placeholder
+            document.addEventListener('DOMContentLoaded', () => {
+                const sendButton = document.getElementById('send-button');
+                if (sendButton) sendButton.disabled = true;
+                appendMessage('bot', "⚠️ Database Error: Please update the configuration in the code to enable lead saving.");
+            });
+            throw new Error("Firebase Configuration Incomplete. Cannot initialize Firebase services.");
         }
 
         const app = initializeApp(firebaseConfig);
@@ -208,13 +222,16 @@
         const auth = getAuth(app);
         let currentUserId = 'client-bot-user'; // Use a generic ID for the public bot
 
-        // Authenticate anonymously (required for Firestore rules)
-        signInAnonymously(auth).then(userCredential => {
+        // Authenticate anonymously (required for Firestore rules) and store the promise
+        authPromise = signInAnonymously(auth).then(userCredential => {
             currentUserId = userCredential.user.uid;
             console.log("Chatbot authenticated anonymously with ID:", currentUserId);
         }).catch(error => {
             console.error("Anonymous authentication failed:", error);
+            // Even if auth fails, we resolve the promise so the app doesn't hang, 
+            // but the save function will likely fail gracefully.
         });
+
 
         // Function to save the collected order to Firestore
         async function saveCustomOrderLead(step1Details, step2Details) {
@@ -232,7 +249,7 @@
                 console.log("Custom order lead successfully logged to Firestore.");
             } catch (e) {
                 console.error("Error adding document: ", e);
-                appendMessage('bot', "There was an error logging your request to our system, but please rest assured our baker has been notified and will call you!");
+                appendMessage('bot', "There was an error logging your request to our system. Please try again or call our baker directly at (407) 799-0341.");
             }
         }
 
@@ -321,6 +338,12 @@
             const inputElement = document.getElementById('user-input');
             const message = inputElement.value.trim();
             if (message === '') return;
+            
+            // Configuration check for runtime
+            if (firebaseConfig.apiKey === "YOUR_API_KEY" || firebaseConfig.appId === "YOUR_APP_APPID") {
+                 appendMessage('bot', "⚠️ Please complete the Firebase configuration in the code to enable lead saving.");
+                 return;
+            }
 
             inputElement.value = '';
             appendMessage('user', message);
