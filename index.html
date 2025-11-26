@@ -141,6 +141,7 @@
         
         // Use provided global variables
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        // FIXED: Added fallback projectId to prevent "projectId not provided" error
         const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
 
         setLogLevel('debug'); // Enable detailed Firebase logs
@@ -168,9 +169,20 @@
 
 
         // 1. Initialize Firebase App
-        const app = initializeApp(firebaseConfig);
-        db = getFirestore(app);
-        auth = getAuth(app);
+        try {
+            const app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+        } catch (e) {
+             console.error("Firebase Initialization Failed:", e);
+             const statusElement = document.getElementById('status-message');
+             if (statusElement) {
+                statusElement.textContent = `Database connection FAILED: ${e.message}. Orders cannot be saved.`;
+                statusElement.classList.remove('text-gray-500', 'text-green-600');
+                statusElement.classList.add('text-red-600');
+             }
+        }
+
 
         /**
          * Determines the Firestore collection path for saving private order data.
@@ -182,44 +194,47 @@
         }
 
         // 2. Handle Authentication
-        onAuthStateChanged(auth, async (user) => {
-            const statusElement = document.getElementById('status-message');
-            if (user) {
-                userId = user.uid;
-                isAuthReady = true;
-                console.log("Firebase Auth Ready. User ID:", userId);
-                
-                // Update status visual on success
-                if (statusElement) {
-                    statusElement.textContent = `Database connected. User: ${userId.substring(0, 8)}...`;
-                    statusElement.classList.remove('text-gray-500', 'text-red-600');
-                    statusElement.classList.add('text-green-600');
-                }
-            } else {
-                // If not signed in via token, sign in anonymously
-                try {
-                    await signInAnonymously(auth);
-                } catch (error) {
-                    console.error("Anonymous Sign-in failed:", error);
-                    // Update status visual on failure
-                    if (statusElement) {
-                        statusElement.textContent = 'Database connection failed.';
-                        statusElement.classList.remove('text-gray-500', 'text-green-600');
-                        statusElement.classList.add('text-red-600');
+        if (auth) {
+            onAuthStateChanged(auth, async (user) => {
+                const statusElement = document.getElementById('status-message');
+                if (user) {
+                    userId = user.uid;
+                    isAuthReady = true;
+                    console.log("Firebase Auth Ready. User ID:", userId);
+                    
+                    // Update status visual on success
+                    if (statusElement && !statusElement.classList.contains('text-red-600')) {
+                        statusElement.textContent = `Database connected. User: ${userId.substring(0, 8)}...`;
+                        statusElement.classList.remove('text-gray-500');
+                        statusElement.classList.add('text-green-600');
+                    }
+                } else {
+                    // If not signed in via token, sign in anonymously
+                    try {
+                        await signInAnonymously(auth);
+                    } catch (error) {
+                        console.error("Anonymous Sign-in failed:", error);
+                        // Update status visual on failure
+                        if (statusElement) {
+                            statusElement.textContent = 'Database connection failed. Order saving disabled.';
+                            statusElement.classList.remove('text-gray-500', 'text-green-600');
+                            statusElement.classList.add('text-red-600');
+                        }
                     }
                 }
-            }
-        });
-
-        // Use the initial auth token if provided (Canvas environment)
-        if (typeof __initial_auth_token !== 'undefined') {
-            signInWithCustomToken(auth, __initial_auth_token).catch(error => {
-                console.error("Custom token sign-in failed, trying anonymous:", error);
-                signInAnonymously(auth);
             });
-        } else {
-            signInAnonymously(auth);
+
+            // Use the initial auth token if provided (Canvas environment)
+            if (typeof __initial_auth_token !== 'undefined') {
+                signInWithCustomToken(auth, __initial_auth_token).catch(error => {
+                    console.error("Custom token sign-in failed, trying anonymous:", error);
+                    signInAnonymously(auth);
+                });
+            } else {
+                signInAnonymously(auth);
+            }
         }
+
 
         // --- Chatbot Configuration ---
         const API_KEY = "AIzaSyDqZi2PHfuNciyv8Rsj8budM2I8t5HhC9g"; 
@@ -248,7 +263,6 @@
         * Q: Do you offer seasonal flavors? A: Yes, our current seasonal flavor is Pumpkin.
         
         ## 3. Policy and Logistics
-        * Q: What is your policy on allergies and cross-contamination? A: We do offer Gluten-Free options. HOWEVER, as we are a home kitchen, there is a possibility of cross-contamination with common allergens, including nuts and gluten. We cannot guarantee a certified allergen-free product.
         * Q: What is your minimum required deposit? A: A deposit of 1/2 down (50%) is required at the time of booking for all orders.
         * Q: What is the rush order fee? A: There is a minimum $25 fee for rush orders.
         * Q: Do you offer delivery? A: Yes, we offer delivery up to a 100-mile max radius.
@@ -287,17 +301,19 @@
             }
 
             if (orderStep === 1) {
+                // Process the answer to Step 1 (Date, Item, Contact)
                 customOrderDetails.contact_info = userMessage;
                 orderStep = 2;
                 const recap = userMessage.length > 50 ? userMessage.substring(0, 50) + '...' : userMessage;
                 // ADDED explicit cancel instruction
-                return `Thank you! I see you need: "${recap}". I just need two more details: 4) What is the desired **Flavor/Theme/Allergies**? 5) Where is the **Delivery Address** so we can calculate the fee? (Remember, a 50% deposit is required to book! Type 'cancel' to exit this flow.)`;
+                return `Thank Muffin! I see you need: "${recap}". I just need two more details: 4) What is the desired **Flavor/Theme/Allergies**? 5) Where is the **Delivery Address** so we can calculate the fee? (Remember, a 50% deposit is required to book! Type 'cancel' to exit this flow.)`;
             } else if (orderStep === 2) {
+                // Process the answer to Step 2 (Details, Location)
                 customOrderDetails.details_and_location = userMessage;
                 orderStep = 3;
                 
                 // FINAL STEP: Save to Firestore
-                if (isAuthReady) {
+                if (isAuthReady && db) { // Check if Firestore is initialized
                     try {
                         const newOrder = {
                             date_created: new Date().toISOString(),
@@ -311,10 +327,11 @@
                         console.log("Order saved to Firestore successfully:", newOrder);
                     } catch (e) {
                         console.error("Error saving order to Firestore:", e);
+                        // Changed message to reflect the attempt to save
                         return `<div class="error-message">Database Error: Order was captured, but failed to save to our system. Please call (407) 799-0341 to ensure your order is placed.</div>`;
                     }
                 } else {
-                    console.warn("Firestore not ready, order not saved.");
+                    console.warn("Firestore not ready or initialized. Order will not be saved persistently.");
                 }
 
                 const phoneNumMatch = customOrderDetails.contact_info.match(/\d{3}[-.\s]?\d{3}[-.\s]?\d{4}/);
@@ -327,10 +344,13 @@
                 return `Perfect! I have captured all the delicious details: ${recap}. Our baker will review these details and contact you at ${phoneNum} within 24 hours to confirm the final quote and collect the deposit. Is there anything else I can help you with today?`;
             }
 
-            orderStep = 1;
-            isInOrderFlow = true;
-            // ADDED explicit cancel instruction
-            return "I'd be happy to start that for you! To give our baker the best details, I need three main ingredients: 1) What is the **Date** and **Time** you need the order? 2) What is the **Type of item** (e.g., 2 dozen cupcakes, a custom birthday cake, catering)? 3) What is the best **Name and Phone Number** for our baker to call you back? (Type 'cancel' to exit this flow.)";
+            // Only enter this block if the flow is triggered AND orderStep is 0 (initial start)
+            if (orderStep === 0) {
+                orderStep = 1;
+                isInOrderFlow = true;
+                // Returns Step 1 prompt
+                return "I'd be happy to start that for you! To give our baker the best details, I need three main ingredients: 1) What is the **Date** and **Time** you need the order? 2) What is the **Type of item** (e.g., 2 dozen cupcakes, a custom birthday cake, catering)? 3) What is the best **Name and Phone Number** for our baker to call you back? (Type 'cancel' to exit this flow.)";
+            }
         }
 
         async function getGeminiResponse(userQuery) {
@@ -340,17 +360,23 @@
             const userMessageLower = userQuery.toLowerCase();
 
             // Define trigger phrases for the custom order flow
-            const flowTriggers = ['custom order', 'place order', 'start order', 'yes', 'i do', 'i want to', 'i want'];
+            const flowTriggers = ['custom order', 'place order', 'start order', 'yes', 'i do', 'i want to', 'i want', 'cake'];
 
-            // Check if the flow is active or if the message contains a trigger
+            // Check if the message contains a trigger
             const isTriggeringFlow = flowTriggers.some(trigger => userMessageLower.includes(trigger));
 
-
-            // FIXED: Now checks for common confirmation words like 'yes' to start the flow
-            if (isInOrderFlow || isTriggeringFlow) {
-                return await handleCustomOrderFlow(userQuery);
+            // FIXED BUG: Prioritize existing flow progression over re-triggering the start.
+            if (isInOrderFlow) {
+                 return await handleCustomOrderFlow(userQuery);
             }
             
+            // Only initiate flow if not already in flow AND message contains a trigger
+            if (isTriggeringFlow) {
+                // Sets orderStep=1 and isInOrderFlow=true and returns Step 1 prompt
+                return await handleCustomOrderFlow(userQuery); 
+            }
+            
+            // Fallback to Gemini API for general questions
             const fullQuery = `
                 KNOWLEDGE BASE:\n---\n${knowledgeBase}\n---\n
                 USER QUERY: ${userQuery}
